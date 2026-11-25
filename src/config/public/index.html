@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOS DAGING — AI Employee Control Center</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root { --bg: #0f1115; --card: #181b22; --border: #2a2f3a; --text: #f1f5f9; --accent: #dc2626; --muted: #94a3b8; }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    input, textarea { width: 100%; padding: 10px; margin: 6px 0 14px; background: #0b0d10; border: 1px solid var(--border); color: var(--text); border-radius: 6px; }
+    button { background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button.secondary { background: #334155; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .hidden { display: none; }
+    .badge { padding: 3px 8px; border-radius: 99px; font-size: 12px; background: #14532d; color: #86efac; }
+    .log-box { height: 280px; overflow-y: auto; background: #090a0d; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BOS DAGING CORE — Control Center</h1>
+
+    <!-- Login Section -->
+    <div id="loginBox" class="card" style="max-width: 420px; margin: 60px auto;">
+      <h2>Login Owner</h2>
+      <input type="email" id="loginEmail" placeholder="Email Owner (misal: fahmi.bosdaging@gmail.com)" />
+      <input type="password" id="loginPassword" placeholder="Password" />
+      <button onclick="login()">Masuk Dashboard</button>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboardBox" class="hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <span id="ownerLabel" style="color: var(--muted);"></span>
+        <button class="secondary" onclick="logout()">Keluar</button>
+      </div>
+
+      <div class="grid">
+        <!-- Form Tambah AI Employee + WhatsApp Number -->
+        <div class="card">
+          <h3>Hubungkan AI Employee & Nomor WhatsApp</h3>
+          <input type="text" id="empName" placeholder="Nama AI Employee" />
+          <input type="text" id="phoneNumberId" placeholder="Meta Phone Number ID (contoh: 1529269316928656)" />
+          <input type="text" id="displayPhone" placeholder="Nomor Tampil (contoh: +62812xxxx)" />
+          <input type="password" id="waToken" placeholder="Meta Permanent / Temporary Access Token" />
+          <textarea id="sysInstruction" rows="4" placeholder="Instruksi Sistem & Pengetahuan Produk BOS DAGING..."></textarea>
+          <button onclick="createEmployee()">Simpan & Aktifkan</button>
+        </div>
+
+        <!-- Live Real-Time Stream -->
+        <div class="card">
+          <h3>Live Traffic & Monitoring Real-Time</h3>
+          <div id="liveLogs" class="log-box">Menunggu pesan masuk dari WhatsApp...</div>
+        </div>
+      </div>
+
+      <!-- Daftar AI Employee Aktif -->
+      <div class="card">
+        <h3>Daftar AI Employee Aktif</h3>
+        <div id="employeeList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('bd_token');
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (res.status === 401) logout();
+      return res.json();
+    }
+
+    async function login() {
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      if (data.token) {
+        token = data.token;
+        localStorage.setItem('bd_token', token);
+        initApp();
+      } else {
+        alert(data.error || 'Login gagal');
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('bd_token');
+      location.reload();
+    }
+
+    async function createEmployee() {
+      const payload = {
+        name: document.getElementById('empName').value,
+        phoneNumberId: document.getElementById('phoneNumberId').value,
+        displayPhone: document.getElementById('displayPhone').value,
+        accessToken: document.getElementById('waToken').value,
+        systemInstruction: document.getElementById('sysInstruction').value
+      };
+      const res = await api('/api/employees', { method: 'POST', body: JSON.stringify(payload) });
+      if (res.id) {
+        alert('AI Employee berhasil dihubungkan.');
+        loadEmployees();
+      } else {
+        alert(res.error || 'Gagal menyimpan');
+      }
+    }
+
+    async function updateInstruction(id) {
+      const newInstr = document.getElementById(`instr-${id}`).value;
+      await api(`/api/employees/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ systemInstruction: newInstr })
+      });
+      alert('Instruksi AI berhasil diperbarui tanpa restart server.');
+    }
+
+    async function loadEmployees() {
+      const list = await api('/api/employees');
+      const container = document.getElementById('employeeList');
+      container.innerHTML = list.map(emp => `
+        <div style="border-top:1px solid #2a2f3a; padding:14px 0;">
+          <div style="display:flex; justify-content:space-between;">
+            <strong>${emp.name}</strong>
+            <span class="badge">Phone ID: ${emp.whatsappChannel?.phoneNumberId || '-'}</span>
+          </div>
+          <textarea id="instr-${emp.id}" rows="3">${emp.systemInstruction}</textarea>
+          <button class="secondary" onclick="updateInstruction('${emp.id}')">Update Instruksi AI</button>
+        </div>
+      `).join('');
+    }
+
+    function initSocket() {
+      const socket = io({ auth: { token } });
+      const logBox = document.getElementById('liveLogs');
+      const appendLog = (msg) => {
+        logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+      };
+      socket.on('chat:incoming', d => appendLog(`⬅️ [${d.aiEmployeeName}] dari ${d.customerWaId}: ${d.text}`));
+      socket.on('chat:outgoing', d => appendLog(`➡️ Balasan AI ke ${d.customerWaId}: ${d.text}`));
+    }
+
+    function initApp() {
+      if (!token) return;
+      document.getElementById('loginBox').classList.add('hidden');
+      document.getElementById('dashboardBox').classList.remove('hidden');
+      loadEmployees();
+      initSocket();
+    }
+
+    initApp();
+  </script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AiStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageSender {
+  CUSTOMER
+  AI_EMPLOYEE
+  OWNER_OVERRIDE
+}
+
+enum ActivityActorType {
+  OWNER
+  AI_EMPLOYEE
+  SYSTEM
+}
+
+model Owner {
+  id           String   @id @default(uuid())
+  name         String   @default("Syarif")
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  aiEmployees  AiEmployee[]
+  instructions AiInstruction[]
+}
+
+model AiEmployee {
+  id                  String   @id @default(uuid())
+  ownerId             String
+  owner               Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  name                String
+  identityDescription String?  @db.Text
+
+  // Konfigurasi Model OpenAI per AI Karyawan
+  openaiModel         String   @default("gpt-4o-mini")
+  temperature         Float    @default(0.3)
+  maxTokens           Int      @default(1000)
+  historyWindowSize   Int      @default(15)
+
+  status              AiStatus @default(INACTIVE)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relasi 1-to-1 ke Nomor WhatsApp
+  whatsappNumber      WhatsappNumber?
+
+  instructions        AiInstruction[]
+  conversations       Conversation[]
+  memories            AiMemory[]
+  activityLogs        ActivityLog[]
+
+  @@index([ownerId, status])
+}
+
+model WhatsappNumber {
+  id                String     @id @default(uuid())
+  aiEmployeeId      String     @unique
+  aiEmployee        AiEmployee @relation(fields: [aiEmployeeId], references: [id], onDelete: Cascade)
+
+  waPhoneNumberId   String     @unique // ID Nomor dari Meta Business Cloud API
+  waDisplayNumber   String     @unique // Format E.164 (contoh: 6281234567890)
+  waAccessTokenEnc  String     @db.Text // Token Meta terenkripsi AES-256-GCM
+  isConnected       Boolean    @default(true)
+
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([waPhoneNumberId])
+}
+
+model Customer {
+  id            String         @id @default(uuid())
+  waId          String         @unique // Nomor WhatsApp Customer (E.164)
+  profileName   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  conversations Conversation[]
+  memories      AiMemory[]
+}
+
+model Conversation {
+  id            String     @id @default(uuid())
+  aiEmployeeId  String
+  aiEmployee    AiEmployee @relation(fields: [aiEmployeeId], references: [id], onDelete: Cascade)
+
+  customerId    String
+  customer      Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  isAiPaused    Boolean    @default(false)
+  lastMessageAt DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  messages      Message[]
+
+  // Isolasi mutlak: Setiap AI Employee memiliki sesi percakapan terpisah untuk customer yang sama
+  @@unique([aiEmployeeId, customerId])
+  @@index([aiEmployeeId, lastMessageAt])
+}
+
+model Message {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  waMessageId    String?          @unique
+  direction      MessageDirection
+  sender         MessageSender
+  content        String           @db.Text
+  tokenUsage     Int?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model AiInstruction {
+  id           String     @id @default(uuid())
+  aiEmployeeId String
+  aiEmployee   AiEmployee @relation(fields: [aiEmployeeId], references: [id], onDelete: Cascade)
+
+  ownerId      String
+  owner        Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  title        String
+  content      String     @db.Text
+  priority     Int        @default(1)
+  isActive     Boolean    @default(true)
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([aiEmployeeId, isActive, priority])
+}
+
+model AiMemory {
+  id           String     @id @default(uuid())
+  aiEmployeeId String
+  aiEmployee   AiEmployee @relation(fields: [aiEmployeeId], references: [id], onDelete: Cascade)
+
+  customerId   String
+  customer     Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  factsSummary String     @db.Text // Fakta terverifikasi customer khusus untuk AI ini
+  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime   @default(now())
+
+  // Isolasi memori: AI A tidak bisa membaca memori milik AI B untuk customer yang sama
+  @@unique([aiEmployeeId, customerId])
+}
+
+model ActivityLog {
+  id           String            @id @default(uuid())
+  aiEmployeeId String?
+  aiEmployee   AiEmployee?       @relation(fields: [aiEmployeeId], references: [id], onDelete: SetNull)
+
+  actorType    ActivityActorType
+  action       String
+  metadata     Json?
+  createdAt    DateTime          @default(now())
+
+  @@index([aiEmployeeId, createdAt])
+}

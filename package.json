@@ -1,0 +1,32 @@
+{
+  "name": "bos-daging-core",
+  "version": "1.0.0",
+  "description": "Database & Multi-Number WhatsApp AI Employee Engine for BOS DAGING",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "test": "node --test tests/*.test.js",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "build": "npx prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.21.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "openai": "^4.73.0",
+    "socket.io": "^4.8.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  }
+}
